@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "erd-smith"
+version = "0.1.0"
+description = "Auto-generate database ERD diagrams from SQL, Django, or SQLAlchemy schemas"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "erd-smith contributors"}]
+keywords = ["erd", "database", "diagram", "sql", "django", "sqlalchemy", "mermaid"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Database",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+erd-smith = "erd_smith.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["erd_smith*"]
