@@ -1,5 +1,8 @@
 # erd-smith
 
+[![Built with Claude Code](https://img.shields.io/badge/Built%20with-Claude%20Code-blue?logo=anthropic&logoColor=white)](https://claude.ai/code)
+
+
 Auto-generate database ERD diagrams from SQL, Django, or SQLAlchemy schemas.
 
 ## Features
