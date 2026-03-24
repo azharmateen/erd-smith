@@ -4,76 +4,69 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
 
-from .parser import Schema
-
-
-class LintLevel(str, Enum):
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
+from .parsers.base import Schema
 
 
 @dataclass
 class LintIssue:
     rule: str
-    level: LintLevel
+    level: str
     table: str
-    column: str | None
     message: str
 
     def to_dict(self) -> dict:
-        d = {"rule": self.rule, "level": self.level.value, "table": self.table, "message": self.message}
-        if self.column:
-            d["column"] = self.column
-        return d
+        return {"rule": self.rule, "level": self.level, "table": self.table, "message": self.message}
+
+
+SQL_KEYWORDS = {"user", "order", "group", "select", "table", "index", "key", "where", "from", "join"}
 
 
 def _is_snake_case(name: str) -> bool:
     return bool(re.match(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$", name))
 
 
+def _looks_plural(name: str) -> bool:
+    if name.endswith("ies") or name.endswith("ses") or name.endswith("xes"):
+        return True
+    if name.endswith("s") and not name.endswith("ss") and not name.endswith("us") and not name.endswith("status"):
+        return True
+    return False
+
+
 def lint_schema(schema: Schema) -> list[LintIssue]:
     issues: list[LintIssue] = []
-    related_tables: set[str] = set()
-    for table in schema.tables:
-        for fk in table.foreign_keys:
-            related_tables.add(table.name.lower())
-            related_tables.add(fk.ref_table.lower())
-        for col in table.columns:
-            if col.references:
-                related_tables.add(table.name.lower())
-                related_tables.add(col.references.split(".")[0].lower())
+    related = set()
+    for rel in schema.relationships:
+        related.add(rel.from_table.lower())
+        related.add(rel.to_table.lower())
+
     indexed_cols: dict[str, set[str]] = {}
     for table in schema.tables:
-        cols: set[str] = set()
-        cols.update(c.lower() for c in table.primary_key)
+        ic = set()
         for idx in table.indexes:
-            cols.update(c.lower() for c in idx.columns)
+            ic.update(idx.columns)
         for col in table.columns:
-            if col.unique:
-                cols.add(col.name.lower())
-        indexed_cols[table.name.lower()] = cols
+            if col.primary_key:
+                ic.add(col.name)
+        indexed_cols[table.name] = ic
+
     for table in schema.tables:
         if not _is_snake_case(table.name):
-            issues.append(LintIssue(rule="ES001", level=LintLevel.WARNING, table=table.name, column=None,
-                                    message=f"Table '{table.name}' should use snake_case naming"))
-        if not table.primary_key:
-            issues.append(LintIssue(rule="ES004", level=LintLevel.ERROR, table=table.name, column=None,
-                                    message=f"Table '{table.name}' has no primary key"))
-        if table.name.lower() not in related_tables and len(schema.tables) > 1:
-            issues.append(LintIssue(rule="ES006", level=LintLevel.INFO, table=table.name, column=None,
-                                    message=f"Table '{table.name}' has no relationships (orphan table)"))
-        tbl_indexed = indexed_cols.get(table.name.lower(), set())
+            issues.append(LintIssue("ERD001", "warning", table.name, f"Table '{table.name}' not snake_case"))
+        if _looks_plural(table.name):
+            issues.append(LintIssue("ERD007", "info", table.name, f"Table '{table.name}' appears plural"))
+        if table.name.lower() in SQL_KEYWORDS:
+            issues.append(LintIssue("ERD008", "warning", table.name, f"Table '{table.name}' is SQL keyword"))
+        if not table.primary_keys:
+            issues.append(LintIssue("ERD004", "error", table.name, f"Table '{table.name}' has no PK"))
+        if table.name.lower() not in related and len(schema.tables) > 1:
+            issues.append(LintIssue("ERD006", "info", table.name, f"Table '{table.name}' is orphan"))
         for col in table.columns:
             if not _is_snake_case(col.name):
-                issues.append(LintIssue(rule="ES002", level=LintLevel.WARNING, table=table.name, column=col.name,
-                                        message=f"Column '{col.name}' should use snake_case naming"))
-            if col.references and not col.name.endswith("_id"):
-                issues.append(LintIssue(rule="ES003", level=LintLevel.WARNING, table=table.name, column=col.name,
-                                        message=f"FK column '{col.name}' should end with '_id'"))
-            if col.references and col.name.lower() not in tbl_indexed:
-                issues.append(LintIssue(rule="ES005", level=LintLevel.WARNING, table=table.name, column=col.name,
-                                        message=f"FK column '{col.name}' should have an index"))
+                issues.append(LintIssue("ERD002", "warning", table.name, f"Column '{table.name}.{col.name}' not snake_case"))
+            if col.foreign_key and not col.name.endswith("_id"):
+                issues.append(LintIssue("ERD003", "warning", table.name, f"FK '{table.name}.{col.name}' should end '_id'"))
+            if col.foreign_key and col.name not in indexed_cols.get(table.name, set()):
+                issues.append(LintIssue("ERD005", "warning", table.name, f"FK '{table.name}.{col.name}' not indexed"))
     return issues
